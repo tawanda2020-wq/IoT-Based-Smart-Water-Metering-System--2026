@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IoT Smart Water Metering System</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap"
+        rel="stylesheet" />
+
+    <!-- Firebase v9 compat (no bundler needed - works on Netlify/GitHub Pages) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+    <!-- Chart.js (local copy — in /js/) -->
+    <script src="js/chart.umd.min.js"></script>
+
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════
+     LOGIN MODAL
+     ════════════════════════════════════════════════════ -->
+    <div id="loginModal" class="modal" style="display:none;">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card">
+            <div class="modal-logo">
+                <div class="drop-icon">💧</div>
+                <h1>IoT-Based Smart Water<br />Metering System</h1>
+                <p>Secure monitoring access</p>
+            </div>
+            <form id="loginForm" autocomplete="off">
+                <div class="field-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="username" required />
+                </div>
+                <div class="field-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="••••••••" required />
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    Access Dashboard
+                </button>
+                <div id="loginError" class="login-error" style="display:none;"></div>
+            </form>
+            <p class="login-hint">2026</p>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+     WELCOME / LANDING SCREEN
+     ════════════════════════════════════════════════════ -->
+    <div id="welcomeScreen" style="display:block;">
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <span class="brand-drop">💧</span>
+                <span class="brand-name">Smart Water Metering System</span>
+            </div>
+            <button id="loginBtn" class="btn btn-outline">Login</button>
+        </nav>
+
+        <section class="hero">
+            <div class="hero-bg"></div>
+            <div class="hero-content">
+                <div class="hero-badge">IoT-Based Smart Metering</div>
+                <h1 class="hero-title">Water Distribution<br /><span class="accent">Monitoring System</span></h1>
+                <p class="hero-sub">
+                    Real-time flow monitoring, automated leak detection, and intelligent
+                    analytics for your water distribution pipeline.
+                </p>
+                <button id="loginBtnHero" class="btn btn-primary btn-lg">Get Started</button>
+            </div>
+
+            <div class="hero-features">
+                <div class="feat-pill">📊 Real-time Flow</div>
+                <div class="feat-pill">🚨 Leak Detection</div>
+                <div class="feat-pill">🔧 Remote Control</div>
+                <div class="feat-pill">📈 Analytics</div>
+                <div class="feat-pill">☁️ Cloud IoT</div>
+            </div>
+
+            <div class="feature-cards">
+                <div class="feature-card">
+                    <div class="fc-icon">📡</div>
+                    <h3>Live Cloud Monitoring</h3>
+                    <p>ESP32 pushes data to Firebase every 2 seconds - view from anywhere.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="fc-icon">🔍</div>
+                    <h3>Leak Detection</h3>
+                    <p>Mass-balance algorithm detects flow differentials beyond calibrated thresholds.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="fc-icon">⚡</div>
+                    <h3>Remote Control</h3>
+                    <p>Web-based pump on/off control via Firebase - works from any device, anywhere.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+     MAIN DASHBOARD
+     ════════════════════════════════════════════════════ -->
+    <div id="dashboard" style="display:none;">
+
+        <!-- TOP BAR -->
+        <header class="dash-header">
+            <div class="dash-header-inner">
+                <div class="dash-brand">
+                    <span class="brand-drop">💧</span>
+                    <span class="brand-name">IoT-Based Smart Water Metering System</span>
+                </div>
+                <div class="dash-status-bar">
+                    <!--
+                        Two status indicators:
+                        1. Firebase connection (is the browser talking to Firebase?)
+                        2. ESP32 online (is Firebase receiving fresh data from the hardware?)
+                    -->
+                    <span id="connectionStatus" class="conn-indicator offline">
+                        <span class="conn-dot"></span>
+                        <span id="connText">Connecting...</span>
+                    </span>
+                    <span class="sep">|</span>
+                    <span id="esp32StatusIndicator" class="conn-indicator offline">
+                        <span class="conn-dot"></span>
+                        <span id="esp32StatusText">ESP32 Offline</span>
+                    </span>
+                    <span class="sep">|</span>
+                    <span id="lastUpdateText" class="last-update">--:--:--</span>
+                    <button id="logoutBtn" class="btn btn-ghost btn-sm">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="dash-main">
+
+            <!-- ── SECTION 1: KPI CARDS ── -->
+            <section class="kpi-section">
+
+                <!-- SOURCE -->
+                <div class="kpi-card source" id="sourceCard">
+                    <div class="kpi-top">
+                        <div class="kpi-label">SOURCE FLOW</div>
+                        <div class="kpi-badge offline" id="sourceStatus">NO DATA</div>
+                    </div>
+                    <div class="kpi-primary">
+                        <span id="sourceFlowValue" class="kpi-num">-.-</span>
+                        <span class="kpi-unit">L/min</span>
+                    </div>
+                    <div class="kpi-secondary">
+                        Total: <strong id="sourceTotalValue">-.-</strong> L supplied
+                    </div>
+                </div>
+
+                <!-- DESTINATION -->
+                <div class="kpi-card destination" id="destCard">
+                    <div class="kpi-top">
+                        <div class="kpi-label">DESTINATION FLOW</div>
+                        <div class="kpi-badge offline" id="destStatus">NO DATA</div>
+                    </div>
+                    <div class="kpi-primary">
+                        <span id="destFlowValue" class="kpi-num">-.-</span>
+                        <span class="kpi-unit">L/min</span>
+                    </div>
+                    <div class="kpi-secondary">
+                        Total: <strong id="destTotalValue">-.-</strong> L delivered
+                    </div>
+                </div>
+
+                <!-- DIFFERENTIAL -->
+                <div class="kpi-card differential" id="diffCard">
+                    <div class="kpi-top">
+                        <div class="kpi-label">DIFFERENTIAL</div>
+                        <div class="kpi-badge success" id="diffStatus">Normal</div>
+                    </div>
+                    <div class="kpi-primary">
+                        <span id="flowDifferentialValue" class="kpi-num">-.-</span>
+                        <span class="kpi-unit">L/min</span>
+                    </div>
+                    <div class="kpi-secondary">
+                        Loss: <strong id="literDifferenceValue">-.-</strong> L
+                        (<span id="lossPercentageValue">-.-</span>%)
+                    </div>
+                </div>
+
+                <!-- SESSION TOTAL -->
+                <div class="kpi-card totals">
+                    <div class="kpi-top">
+                        <div class="kpi-label">SESSION TOTAL</div>
+                        <div id="pumpStatusBadge" class="kpi-badge offline">Pump OFF</div>
+                    </div>
+                    <div class="kpi-primary">
+                        <span id="totalConsumptionValue" class="kpi-num">-.-</span>
+                        <span class="kpi-unit">L</span>
+                    </div>
+                    <div class="kpi-secondary">
+                        Uptime: <strong id="systemUptimeDisplay">--h --m</strong>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- ── SECTION 2: FLOW CHART ── -->
+            <section class="chart-section card">
+                <div class="card-hd">
+                    <h2 class="section-title">📈 Real-time Flow Monitor</h2>
+                    <div class="chart-legend-row">
+                        <span class="cl-item"><span class="cl-dot" style="background:#38bdf8;"></span>Source (L/min)</span>
+                        <span class="cl-item"><span class="cl-dot" style="background:#fb923c;"></span>Destination (L/min)</span>
+                        <span class="cl-item"><span class="cl-dot" style="background:#34d399;"></span>Src Total (L)</span>
+                        <span class="cl-item"><span class="cl-dot" style="background:#a78bfa;"></span>Dst Total (L)</span>
+                    </div>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="flowChart"></canvas>
+                </div>
+            </section>
+
+            <!-- ── SECTION 3: CONTROLS + ALERTS ── -->
+            <section class="two-col">
+
+                <!-- Controls -->
+                <div class="card">
+                    <div class="card-hd">
+                        <h2 class="section-title">⚡ System Controls</h2>
+                        <span id="pumpStatus" class="conn-indicator offline">
+                            <span class="conn-dot"></span>
+                            <span id="pumpStatusText">Pump OFF</span>
+                        </span>
+                    </div>
+
+                    <div class="controls-grid">
+                        <button id="pumpOnBtn" class="btn btn-success btn-icon">
+                            <span>🟢</span> Start Pump
+                        </button>
+                        <button id="pumpOffBtn" class="btn btn-danger btn-icon">
+                            <span>🔴</span> Stop Pump
+                        </button>
+                        <button id="resetSystemBtn" class="btn btn-warning btn-icon" style="grid-column: span 2;">
+                            <span>🔄</span> Reset System Counters
+                        </button>
+                    </div>
+
+                    <div class="status-table">
+                        <div class="st-row"><span>System Status</span><strong id="systemStatusText">Initializing...</strong></div>
+                        <div class="st-row"><span>Uptime</span><strong id="systemUptime">--h --m</strong></div>
+                        <div class="st-row"><span>Last Update</span><strong id="lastUpdate">---</strong></div>
+                        <div class="st-row"><span>Data Source</span><strong id="dataSource">Firebase RTDB</strong></div>
+                    </div>
+                </div>
+
+                <!-- Alerts -->
+                <div class="card alert-card">
+                    <div class="card-hd">
+                        <h2 class="section-title">🚨 System Alerts</h2>
+                        <span id="alertCount" class="conn-indicator online">
+                            <span class="conn-dot"></span>
+                            <span id="alertCountText">0 Active</span>
+                        </span>
+                    </div>
+
+                    <!-- Leak countdown -->
+                    <div id="leakCountdownAlert" class="leak-countdown" style="display:none;">
+                        <h4>🔍 Confirming Potential Leak</h4>
+                        <div class="countdown-row">
+                            <span id="countdownSeconds" class="cd-num">5</span>
+                            <span class="cd-label">seconds to confirm</span>
+                        </div>
+                        <div class="cd-bar-wrap">
+                            <div class="cd-bar" id="countdownBar"></div>
+                        </div>
+                    </div>
+
+                    <div class="alert-list" id="alertsList">
+                        <div class="no-alerts">✅ No active alerts - system operating normally</div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- ── SECTION 4: DAILY ANALYTICS ── -->
+            <section class="card">
+                <div class="card-hd">
+                    <h2 class="section-title">📊 Daily Consumption Analytics</h2>
+                    <select id="periodSelect" class="select-control">
+                        <option value="7">Last 7 Days</option>
+                        <option value="14">Last 14 Days</option>
+                        <option value="30">Last 30 Days</option>
+                    </select>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="consumptionChart"></canvas>
+                </div>
+                <div class="consumption-summary" id="consumptionSummary">
+                    <div class="cs-item">
+                        <span class="cs-label">Avg Daily Supply</span>
+                        <strong id="avgSupply">--</strong>
+                    </div>
+                    <div class="cs-item">
+                        <span class="cs-label">Avg Daily Delivery</span>
+                        <strong id="avgDelivery">--</strong>
+                    </div>
+                    <div class="cs-item">
+                        <span class="cs-label">Avg Daily Loss</span>
+                        <strong id="avgLoss">--</strong>
+                    </div>
+                    <div class="cs-item">
+                        <span class="cs-label">Total Period Loss %</span>
+                        <strong id="periodLoss">--</strong>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Dashboard JS -->
+    <script src="js/dashboard.js"></script>
+</body>
+
+</html>
