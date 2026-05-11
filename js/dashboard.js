@@ -268,6 +268,9 @@ class WaterDashboard {
     // ── Auto-create leak alert if needed ────────
     if (data.leakDetected) this.maybeCreateLeakAlert(data);
 
+    // ── Auto-create no-flow alert if needed ────────
+    if (data.noFlowStop) this.maybeCreateNoFlowAlert(data);
+
     // ── Feed flow chart ──────────────────────────
     this.pushChartPoint(data, new Date());
   }
@@ -367,6 +370,35 @@ class WaterDashboard {
 
     this.alertsRef.child(alertObj.id).set(alertObj).catch(console.error);
     this.toast("🚨 LEAK CONFIRMED - Pump stopped automatically", "error");
+  }
+
+  // ══════════════════════════════════════════════════
+  // NO-FLOW WATCHDOG ALERT  (dashboard side)
+  // ══════════════════════════════════════════════════
+  maybeCreateNoFlowAlert(data) {
+    // Avoid duplicate open alerts of the same type
+    const existing = this.alerts.find(
+      (a) => !a.resolved && a.type === "no_flow"
+    );
+    if (existing) return;
+
+    const alertObj = {
+      id: `no_flow_${Date.now()}`,
+      type: "no_flow",
+      title: "No Flow Detected - Pump Auto-Stopped",
+      message:
+        `Pump was ON but source flow stayed below ${0.3} L/min for 5 s. ` +
+        `Pump stopped automatically to prevent dry-run damage. ` +
+        `Check supply line or prime the pump before restarting.`,
+      severity: "high",
+      timestamp: new Date().toISOString(),
+      resolved: false,
+      srcAtEvent: data.sourceFlow || 0,
+      dstAtEvent: data.destFlow || 0,
+    };
+
+    this.alertsRef.child(alertObj.id).set(alertObj).catch(console.error);
+    this.toast("⚠️ NO FLOW - Pump auto-stopped (dry-run protection)", "error");
   }
 
   async resolveAlert(id) {
